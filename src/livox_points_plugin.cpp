@@ -13,6 +13,7 @@
 #include <gazebo/transport/Node.hh>
 #include "livox_laser_simulation/csv_reader.hpp"
 #include "livox_laser_simulation/livox_ode_multiray_shape.h"
+#include <livox_ros_driver/CustomMsg.h>
 
 namespace gazebo {
 
@@ -25,15 +26,19 @@ LivoxPointsPlugin::~LivoxPointsPlugin() {}
 void convertDataToRotateInfo(const std::vector<std::vector<double>> &datas, std::vector<AviaRotateInfo> &avia_infos) {
     avia_infos.reserve(datas.size());
     double deg_2_rad = M_PI / 180.0;
+    int16_t i = 0;
     for (auto &data : datas) {
         if (data.size() == 3) {
             avia_infos.emplace_back();
             avia_infos.back().time = data[0];
             avia_infos.back().azimuth = data[1] * deg_2_rad;
             avia_infos.back().zenith = data[2] * deg_2_rad - M_PI_2;  //转化成标准的右手系角度
+            avia_infos.back().line = i % 6;
         } else {
             ROS_INFO_STREAM("data size is not 3!");
         }
+
+        i++;
     }
 }
 
@@ -56,7 +61,9 @@ void LivoxPointsPlugin::Load(gazebo::sensors::SensorPtr _parent, sdf::ElementPtr
     ROS_INFO_STREAM("ros topic name:" << curr_scan_topic);
     ros::init(argc, argv, curr_scan_topic);
     rosNode.reset(new ros::NodeHandle);
-    rosPointPub = rosNode->advertise<sensor_msgs::PointCloud>(curr_scan_topic, 5);
+    // rosPointPub = rosNode->advertise<sensor_msgs::PointCloud>(curr_scan_topic, 5);
+    rosPointPub = rosNode->advertise<livox_ros_driver::CustomMsg>(curr_scan_topic, 5);
+
 
     raySensor = _parent;
     auto sensor_pose = raySensor->Pose();
@@ -114,6 +121,7 @@ void LivoxPointsPlugin::OnNewLaserScans() {
         rayShape->Update();
 
         msgs::Set(laserMsg.mutable_time(), world->SimTime());
+
         msgs::LaserScan *scan = laserMsg.mutable_scan();
         InitializeScan(scan);
 
@@ -126,10 +134,11 @@ void LivoxPointsPlugin::OnNewLaserScans() {
         auto verticle_min = VerticalAngleMin().Radian();
         auto verticle_incre = VerticalAngleResolution();
 
-        sensor_msgs::PointCloud scan_point;
-        scan_point.header.stamp = ros::Time::now();
-        scan_point.header.frame_id = raySensor->Name();
-        auto &scan_points = scan_point.points;
+        livox_ros_driver::CustomMsg msg;
+        msg.header.frame_id = raySensor->Name();
+        msg.timebase = ros::Time::now().toNSec();
+        msg.header.stamp = ros::Time::now();
+        ros::Time timestamp = ros::Time::now();
 
         for (auto &pair : points_pair) {
             //int verticle_index = roundf((pair.second.zenith - verticle_min) / verticle_incre);
@@ -157,20 +166,27 @@ void LivoxPointsPlugin::OnNewLaserScans() {
 
                 auto axis = ray * ignition::math::Vector3d(1.0, 0.0, 0.0);
                 auto point = range * axis;
-                scan_points.emplace_back();
-                scan_points.back().x = point.X();
-                scan_points.back().y = point.Y();
-                scan_points.back().z = point.Z();
-            //} else {
+                livox_ros_driver::CustomPoint pt;
 
-            //    //                ROS_INFO_STREAM("count is wrong:" << verticle_index << "," << verticalRayCount << ","
-            //    //                << horizon_index
-            //    //                          << "," << rayCount << "," << pair.second.zenith << "," <<
-            //    //                          pair.second.azimuth);
-            //}
+                pt.x = point.X();
+                pt.y = point.Y();
+                pt.z = point.Z();
+                pt.line = pair.second.line;
+                pt.offset_time = ros::Time::now().toNSec() - msg.timebase;
+                pt.tag = 0;
+                pt.reflectivity = static_cast<float>(intensity);
+                msg.points.push_back(pt);
+                //} else {
+
+                //    //                ROS_INFO_STREAM("count is wrong:" << verticle_index << "," << verticalRayCount << ","
+                //    //                << horizon_index
+                //    //                          << "," << rayCount << "," << pair.second.zenith << "," <<
+                //    //                          pair.second.azimuth);
+                //}
         }
+        msg.point_num = msg.points.size();
         if (scanPub && scanPub->HasConnections()) scanPub->Publish(laserMsg);
-        rosPointPub.publish(scan_point);
+        rosPointPub.publish(msg);
         ros::spinOnce();
     }
 }

@@ -4,7 +4,7 @@
   <xacro:property name="M_PI" value="3.14159"/> 
   <xacro:property name="laser_min_range" value="0.1"/>
   <xacro:property name="laser_max_range" value="200.0"/>
-  <xacro:property name="ros_topic" value="scan"/>
+  <xacro:property name="ros_topic" value="/livox/lidar"/>
   <xacro:property name="samples" value="24000"/>
   <xacro:property name="downsample" value="1"/>
   
@@ -57,6 +57,24 @@
 		  <ros_topic>${ros_topic}</ros_topic>
         </plugin>
       </sensor>
+      <sensor name="livox_imu" type="imu">
+        <always_on>true</always_on>
+        <update_rate>200</update_rate>
+        <visualize>false</visualize>
+        <topic>"/livox/imu"</topic>
+        <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+          <topicName>/livox/imu</topicName>
+          <bodyName>livox_imu_link</bodyName>
+          <updateRateHZ>200.0</updateRateHZ>
+          <xyzOffset>0 0 0</xyzOffset>
+          <!-- <gaussianNoise>0.0026399240948208127</gaussianNoise> -->
+          <gaussianNoise>0.00</gaussianNoise>
+          <rpyOffset>0 0 0</rpyOffset>
+          <frameName>livox_imu_link</frameName>
+          <initialOrientationAsReference>false</initialOrientationAsReference>
+        </plugin>
+        <pose>0 0 0 0 0 0</pose>
+      </sensor>
     </gazebo>
   </xacro:macro>
 
@@ -87,6 +105,16 @@
       <child link="${name}"/>
       <origin rpy="0 0 0" xyz="0.0 1.0 0.2"/>
     </joint>
+
+    <link name="${name}_imu_link"/>
+
+    <joint name="imu_link_joint" type="fixed">
+      <parent link="${name}"/>
+      <child link="${name}_imu_link"/>
+      <origin rpy="0 0 0" xyz="-0.05512 -0.02226 0.0297"/>
+    </joint>
+
+
     <xacro:Livox_Mid_gazebo_sensor name="${name}" visualize="${visualize}"/>
   </xacro:macro>
     <xacro:Livox_Mid40 name="livox"/>
